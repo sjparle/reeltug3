@@ -5,6 +5,16 @@ Use it as a quick "what changed and why" log before modifying the codebase.
 
 ## 2026-03-03
 
+### On-Demand Preview Expansion For Arrow Navigation
+- Added lazy preview expansion in `preview_handler.py` for split/start/end navigation.
+- Arrow navigation now loads additional frame strips on demand when the requested page extends beyond currently cached preview keys.
+- Added explicit `<<` / `>>` navigation behavior to jump 5 preview slots per click (for both start and end strips).
+- Stored per-split preview metadata (`video_total_frames`, `video_fps`) to support bounded frame-range checks during lazy loads.
+- Reload paths now also ensure required preview ranges are available before restoring saved preview positions.
+
+Why:
+- Remove the fixed initial preview-window limit so operators can navigate deeper into long clips/splits when selecting join and trim points.
+
 ### Queue/Editor State Recovery + Visibility
 - `ui/main_window.py` now sets `fresh_load=True` in `reset_states()` so the app can auto-load the next reel after resets.
 - `add_to_render()` now recovers from invalid/empty `active_reel` by loading the next reel instead of hard-failing.
