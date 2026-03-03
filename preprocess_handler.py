@@ -3,6 +3,7 @@ import subprocess
 from time import sleep
 
 from path_utils import replace_split_token
+from split_matcher import match_split_crossover
 from sync_transcode import prepare_working_mov
 
 
@@ -78,6 +79,7 @@ class PreprocessHandler:
             target_fps = self._target_fps_for_reel(reel)
             splits = int(reel.get("splits") or 0)
             prepared_path = None
+            prepared_split_paths = []
             total_splits = (splits + 1) if splits > 0 else 1
             for split_index in range(total_splits):
                 output_split_no = split_index + 1
@@ -121,6 +123,9 @@ class PreprocessHandler:
 
                 if split_index == 0:
                     prepared_path = final_path
+                prepared_split_paths.append(final_path)
+
+            split_match_suggestions = self._build_split_match_suggestions(prepared_split_paths)
 
             with self.mainwindow.queue_lock:
                 reel["working_video_dir"] = prepared_path
@@ -129,6 +134,7 @@ class PreprocessHandler:
                 reel["file_type"] = ".mov"
                 reel["prep_state"] = "READY"
                 reel["pre_reversed"] = needs_pre_reverse
+                reel["split_match_suggestions"] = split_match_suggestions
                 reel.pop("prep_error", None)
             print(f"preprocess complete for reel {reel_id}: {prepared_path}")
         except Exception as exc:
@@ -138,6 +144,29 @@ class PreprocessHandler:
             print(f"preprocess failed for reel {reel_id}: {exc}")
         finally:
             self.mainwindow.queue_window.update_queue_table.emit()
+
+    def _build_split_match_suggestions(self, split_paths):
+        if len(split_paths) <= 1:
+            return {}
+
+        suggestions = {}
+        for split_index in range(len(split_paths) - 1):
+            first_path = split_paths[split_index]
+            second_path = split_paths[split_index + 1]
+            match = match_split_crossover(first_path, second_path)
+            if not match:
+                continue
+
+            confidence = float(match["confidence"])
+            first_entry = suggestions.setdefault(split_index, {})
+            first_entry["suggested_end_frame"] = int(match["first_split_end_frame"])
+            first_entry["end_confidence"] = confidence
+
+            second_entry = suggestions.setdefault(split_index + 1, {})
+            second_entry["suggested_start_frame"] = int(match["second_split_start_frame"])
+            second_entry["start_confidence"] = confidence
+
+        return suggestions
 
     def _input_has_audio(self, video_path):
         try:

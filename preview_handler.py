@@ -352,6 +352,7 @@ class PreviewHandler:
             split_state['end_position'],
         )
         reel_previews['end_gui_frame_data'] = end_gui_frame_data
+        self._apply_auto_split_match_suggestion(reel, split, reel_previews)
         self.mainwindow.previews_loading = False
 
     def get_previews(self, reel_id, split, set_preview):
@@ -500,7 +501,10 @@ class PreviewHandler:
             if split_state['start_position'] > max_page_start:
                 split_state['start_position'] = max_page_start
         elif direction == "reload":
-            split_state['start_position'] = self._saved_start_position(reel_preview_data, self.mainwindow.current_split)
+            saved_start = self._saved_start_position(reel_preview_data, self.mainwindow.current_split)
+            if saved_start is None:
+                saved_start = split_state['start_min']
+            split_state['start_position'] = saved_start
 
         self._sync_mainwindow_positions(split_state)
         start_gui_frame_data = self._render_strip(
@@ -531,7 +535,10 @@ class PreviewHandler:
             if split_state['end_position'] > init_frame_no:
                 split_state['end_position'] = init_frame_no
         elif direction == "reload":
-            split_state['end_position'] = self._saved_end_position(reel_preview_data, self.mainwindow.current_split)
+            saved_end = self._saved_end_position(reel_preview_data, self.mainwindow.current_split)
+            if saved_end is None:
+                saved_end = split_state['end_max_page']
+            split_state['end_position'] = saved_end
 
         self._sync_mainwindow_positions(split_state)
         end_gui_frame_data = self._render_strip(
@@ -546,7 +553,7 @@ class PreviewHandler:
     def _saved_start_position(self, reel, split):
         if 'highlight_data' in reel and split in reel['highlight_data']:
             return reel['highlight_data'][split]['preview_start_position']
-        return 0
+        return None
 
     def _saved_end_position(self, reel, split):
         if 'highlight_data' in reel and split in reel['highlight_data']:
@@ -577,8 +584,26 @@ class PreviewHandler:
         if split_state is None:
             start_saved = self._saved_start_position(reel, split)
             end_saved = self._saved_end_position(reel, split)
+            if start_saved is None:
+                suggested_start = self._suggested_frame_for_split(reel, split, "suggested_start_frame")
+                if suggested_start is not None:
+                    start_saved = self._position_for_frame(
+                        suggested_start,
+                        start_min,
+                        start_max_page,
+                        start_interval,
+                    )
+            if end_saved is None:
+                suggested_end = self._suggested_frame_for_split(reel, split, "suggested_end_frame")
+                if suggested_end is not None:
+                    end_saved = self._position_for_frame(
+                        suggested_end,
+                        end_min,
+                        end_max_page,
+                        end_interval,
+                    )
             split_state = {
-                'start_position': start_saved,
+                'start_position': start_saved if start_saved is not None else 0,
                 'end_position': end_saved if end_saved is not None else end_max_page,
             }
             reel['preview_ui_state'][split] = split_state
@@ -596,6 +621,107 @@ class PreviewHandler:
         self.mainwindow.preview_start_position = split_state['start_position']
         self.mainwindow.preview_end_position = split_state['end_position']
         self.mainwindow.end_loaded_once = True
+
+    def _position_for_frame(self, frame_no, min_index, max_page_start, interval):
+        if interval <= 0:
+            return min(max(int(frame_no), min_index), max_page_start)
+        desired = int(frame_no) - (interval * 4)
+        if desired < min_index:
+            desired = min_index
+        page_offset = int((desired - min_index) / interval)
+        page_start = min_index + (page_offset * interval)
+        return min(max(page_start, min_index), max_page_start)
+
+    def _suggested_frame_for_split(self, reel, split, key):
+        split_suggestions = reel.get("split_match_suggestions", {})
+        suggestion = split_suggestions.get(split)
+        if suggestion is None:
+            suggestion = split_suggestions.get(str(split))
+        if not isinstance(suggestion, dict):
+            return None
+        value = suggestion.get(key)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _find_nearest_gui_label(self, gui_frame_data, expected_prefix, target_frame):
+        if target_frame is None:
+            return "", None
+        best_label = ""
+        best_frame = None
+        best_distance = None
+        for label_id, frame_key in gui_frame_data.items():
+            if not str(frame_key).startswith(expected_prefix):
+                continue
+            try:
+                frame_no = int(str(frame_key).replace(expected_prefix, ""))
+            except (TypeError, ValueError):
+                continue
+            distance = abs(frame_no - target_frame)
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_label = label_id
+                best_frame = frame_no
+        return best_label, best_frame
+
+    def _apply_auto_split_match_suggestion(self, reel, split, reel_previews):
+        split_state = reel.get(split, {})
+        if split_state.get("edited"):
+            return
+        if "highlight_data" in reel and split in reel["highlight_data"]:
+            return
+
+        suggestion_map = reel.get("split_match_suggestions", {})
+        suggestion = suggestion_map.get(split)
+        if suggestion is None:
+            suggestion = suggestion_map.get(str(split))
+        if not isinstance(suggestion, dict):
+            return
+
+        start_target = suggestion.get("suggested_start_frame")
+        end_target = suggestion.get("suggested_end_frame")
+        if start_target is None and end_target is None:
+            return
+
+        start_gui = reel_previews.get("start_gui_frame_data", {})
+        end_gui = reel_previews.get("end_gui_frame_data", {})
+        start_label, start_frame = self._find_nearest_gui_label(start_gui, "start_frame", start_target)
+        end_label, end_frame = self._find_nearest_gui_label(end_gui, "end_frame", end_target)
+        if start_label == "" and end_label == "":
+            return
+
+        self.mainwindow.previews_remove_all_highlights()
+        if start_label != "":
+            start_widget = getattr(self.mainwindow, start_label)
+            start_widget.highlighted = True
+            start_widget.setStyleSheet("border: 3px solid blue;")
+        if end_label != "":
+            end_widget = getattr(self.mainwindow, end_label)
+            end_widget.highlighted = True
+            end_widget.setStyleSheet("border: 3px solid blue;")
+
+        if "highlight_data" not in reel:
+            reel["highlight_data"] = {}
+        reel["highlight_data"][split] = {
+            "start_trim_frame": start_label if start_label != "" else "",
+            "end_trim_frame": end_label if end_label != "" else "",
+            "preview_start_position": self.mainwindow.preview_start_position,
+            "preview_end_position": self.mainwindow.preview_end_position,
+            "auto_split_match": True,
+        }
+
+        if "trim_data" not in reel:
+            reel["trim_data"] = {}
+        trim_entry = {}
+        if start_frame is not None:
+            trim_entry["start_frame"] = int(start_frame)
+        if end_frame is not None:
+            trim_entry["end_frame"] = int(end_frame)
+        if trim_entry:
+            reel["trim_data"][split] = trim_entry
 
     def _render_strip(self, preview_dict, frame_prefix, widget_prefix, interval, base_position):
         gui_frame_data = {}

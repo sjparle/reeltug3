@@ -5,7 +5,7 @@ import cv2
 import vlc
 from PyQt5 import QtCore, QtWidgets, uic
 from PyQt5.QtCore import Qt, pyqtSignal, QSettings
-from PyQt5.QtWidgets import QFileDialog, QTableWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QFileDialog, QLabel, QTableWidgetItem, QMessageBox
 
 from api import MakeRequest
 from labelpreviewend import LabelPreviewEnd
@@ -153,6 +153,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.queue_window = QueueWindow(self)
         self.render_window = RenderWindow(self)
         self.settings_window = SettingsWindow(self)
+        self.split_match_status_label = QLabel("Split Match: N/A")
+        self.statusBar().addPermanentWidget(self.split_match_status_label)
         self.pop_up_message("Is ConvertX2DVDClosed?", "ConvertX2DVD")
         self.signal_start_preprocess_manager.emit()
 
@@ -240,6 +242,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cb_5.setChecked(False)
         self.cb_6.setChecked(False)
         self.cb_7.setChecked(False)
+        self._update_split_match_status()
 
     def next_order(self):
         self.reset_states()
@@ -291,6 +294,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_order_reels.selectRow(0)
         self.video_loaded = True
         self.fresh_load = False
+        self._update_split_match_status(self.current_split)
 
     def load_reel(self, reel):
         self.reset_states()
@@ -313,6 +317,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_order_reels.selectRow(0)
         self.video_loaded = True
         self.fresh_load = False
+        self._update_split_match_status(self.current_split)
 
     def set_new_video(self):
         self.video_slider.setSliderPosition(0)
@@ -347,6 +352,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_split_settings_ui(self.current_split)
         if self.active_reel[self.current_split]["edited"] is True:
             self.load_highlight_config()
+        self._update_split_match_status(self.current_split)
 
     def previous_split(self):
         if self.fresh_load or self.active_reel["splits"] == 0 or self.video_loaded is False:
@@ -365,6 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_split_settings_ui(self.current_split)
         if self.active_reel[self.current_split]["edited"] is True:
             self.load_highlight_config()
+        self._update_split_match_status(self.current_split)
 
     def next_video(self):
         "TO DO"
@@ -557,6 +564,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_reel["increase_fps"] = True
         self.active_reel["concat"] = self.checkbox_combine.checkState() == 2
         self.add_new_qc_comments()
+        self._update_split_match_status(current_split)
 
     def _default_reverse_for_reel(self):
         if self.active_reel.get("pre_reversed"):
@@ -583,6 +591,51 @@ class MainWindow(QtWidgets.QMainWindow):
         end_trim_frame = self.active_reel["highlight_data"][self.current_split]["end_trim_frame"]
         getattr(self, start_trim_frame).setStyleSheet("border: 3px solid blue;")
         getattr(self, end_trim_frame).setStyleSheet("border: 3px solid blue;")
+
+    def _split_match_suggestion_for(self, split):
+        suggestions = self.active_reel.get("split_match_suggestions", {})
+        suggestion = suggestions.get(split)
+        if suggestion is None:
+            suggestion = suggestions.get(str(split))
+        if isinstance(suggestion, dict):
+            return suggestion
+        return None
+
+    def _update_split_match_status(self, split=None):
+        if not hasattr(self, "split_match_status_label"):
+            return
+        if not isinstance(self.active_reel, dict) or "id" not in self.active_reel:
+            self.split_match_status_label.setText("Split Match: N/A")
+            return
+
+        if split is None:
+            split = self.current_split
+        suggestion = self._split_match_suggestion_for(split)
+        if not suggestion:
+            self.split_match_status_label.setText(f"Split {split + 1}: No auto match")
+            return
+
+        conf_values = []
+        for key in ("start_confidence", "end_confidence"):
+            if key not in suggestion:
+                continue
+            try:
+                conf_values.append(float(suggestion[key]))
+            except (TypeError, ValueError):
+                continue
+        confidence_text = "unknown"
+        if conf_values:
+            confidence_text = f"{(sum(conf_values) / len(conf_values)):.2f}"
+
+        split_state = self.active_reel.get(split, {})
+        if split_state.get("edited"):
+            mode = "Operator adjusted"
+        else:
+            mode = "Auto suggested"
+
+        self.split_match_status_label.setText(
+            f"Split {split + 1}: {mode} join (confidence {confidence_text})"
+        )
 
     def video_toggle_playback(self):
         if self.mediaplayer.is_playing():

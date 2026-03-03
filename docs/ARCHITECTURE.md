@@ -10,12 +10,15 @@
    - AVI reels are converted to MOV.
    - Reels with reverse comment (`content_int == 8`) are pre-reversed before editing.
    - For split reels with pre-reverse, source split mapping is inverted into output slots so editor flow appears as `SPN -> ... -> SP1`.
+   - For adjacent split pairs, preprocess also computes crossover suggestions and confidence (`split_match_suggestions`).
 3. Preview cache:
    - `MainWindow` starts preview manager thread.
    - `preview_handler.PreviewHandler` extracts start/end previews per reel/split.
    - Queue UI keeps reels visible through preview states (not only initial `RECORDED`).
 4. Edit interaction:
    - User selects split navigation, trim highlights, QC comments in `MainWindow`.
+   - When available, split crossover suggestions are preselected on load for unedited splits.
+   - Status bar shows split-match state and confidence (auto suggestion vs operator-adjusted).
    - Highlight/trim/QC data is stored back onto active reel dict.
 5. Render queue:
    - Edited reel moved to render queue (`state=TO_RENDER`).
@@ -34,6 +37,7 @@ Common fields used across app:
 - Content metadata: `film_type`, `title`, `subtitle`, `qc_data`
 - Runtime/edit state: `state`, `preview_loaded`, `preview_data`, `trim_data`, `highlight_data`
 - Preprocess state: `prep_state`, `prep_error`, `pre_reverse_required`, `pre_reversed`
+- Split match metadata: `split_match_suggestions[split]` with `suggested_start_frame` / `suggested_end_frame` and confidence keys
 - Split-level settings: `reel[split]['reverse']`, `reel[split]['reverse_set_by_operator']`, optional `reel[split]['fps']`
   - Reverse flow uses time reverse + `hflip,vflip` (180-degree correction).
   - For pre-reversed reels, render only applies reverse when `reverse_set_by_operator=True` for the split.

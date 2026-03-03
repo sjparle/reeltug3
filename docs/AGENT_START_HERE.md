@@ -16,6 +16,7 @@ Use this checklist at the start of a new coding-agent session.
 3. Run smoke checks:
    - `python smoke_test.py`
    - includes pre-reverse split remap verification (`split_remap`)
+   - includes split crossover matcher verification (`split_match`)
 
 Optional (if credentials are configured):
 - `python smoke_test.py --live-api`

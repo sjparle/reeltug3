@@ -5,6 +5,22 @@ Use it as a quick "what changed and why" log before modifying the codebase.
 
 ## 2026-03-03
 
+### Auto Split Crossover Matching (MVP)
+- Added preprocess-time split crossover suggestion pass using OpenCV frame similarity:
+  - new module `split_matcher.py` samples the tail of split N and head of split N+1.
+  - computes best frame-pair match with cosine similarity on normalized grayscale features.
+  - writes per-split suggestions into `reel["split_match_suggestions"]` with confidence.
+- Preview/UI integration now applies suggestions for unedited splits:
+  - initial preview paging opens near suggested frame locations.
+  - nearest visible start/end preview thumbnails are auto-highlighted as suggested join points.
+  - manual operator edits still override and remain authoritative.
+- Main window now shows split-level status-bar indicator:
+  - `No auto match`, `Auto suggested join (confidence X.XX)`, or `Operator adjusted join`.
+- Added `split_match` smoke test using synthetic overlapping split videos.
+
+Why:
+- Reduce operator time spent finding split crossover points while preserving manual QC control.
+
 ### Pre-Reverse In Preprocess + Split Order Normalization
 - Added queue-time pre-reverse routing for reels with reverse comment (`content_int == 8`):
   - such reels now set `pre_reverse_required=True` and enter `prep_state=TO_PREP` even when source is already `.mov`.

@@ -11,6 +11,7 @@ from PyQt5 import QtWidgets
 from config import API_PASSWORD, API_USERNAME
 from preview_handler import PreviewHandler
 from preprocess_handler import source_split_number_for_output
+from split_matcher import match_split_crossover
 from ui.workers import workerSignals
 
 
@@ -97,6 +98,47 @@ def split_remap_smoke():
     return True, "Split remap mapping OK."
 
 
+def split_match_smoke():
+    with tempfile.TemporaryDirectory() as tmp:
+        split_a = os.path.join(tmp, "split_a.mp4")
+        split_b = os.path.join(tmp, "split_b.mp4")
+        fps = 18
+        frame_count = 220
+
+        writer_a = cv2.VideoWriter(split_a, cv2.VideoWriter_fourcc(*"mp4v"), fps, (320, 180))
+        writer_b = cv2.VideoWriter(split_b, cv2.VideoWriter_fourcc(*"mp4v"), fps, (320, 180))
+        if not writer_a.isOpened() or not writer_b.isOpened():
+            return False, "Failed to open temporary writers for split match smoke."
+
+        overlap = []
+        for i in range(frame_count):
+            frame = np.zeros((180, 320, 3), dtype=np.uint8)
+            frame[:, :, 0] = (i * 3) % 255
+            frame[:, :, 1] = (i * 7) % 255
+            cv2.putText(frame, str(i), (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (255, 255, 255), 2)
+            if i >= frame_count - 60:
+                overlap.append(frame.copy())
+            writer_a.write(frame)
+
+        for i in range(60):
+            writer_b.write(overlap[i])
+        for i in range(160):
+            frame = np.zeros((180, 320, 3), dtype=np.uint8)
+            frame[:, :, 2] = (i * 11) % 255
+            cv2.putText(frame, f"b{i}", (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.4, (255, 255, 255), 2)
+            writer_b.write(frame)
+
+        writer_a.release()
+        writer_b.release()
+
+        match = match_split_crossover(split_a, split_b, sample_fps=4.0, window_seconds=10.0, min_confidence=0.7)
+        if not match:
+            return False, "Split matcher returned no suggestion on synthetic overlap."
+        if "first_split_end_frame" not in match or "second_split_start_frame" not in match or "confidence" not in match:
+            return False, f"Split matcher response missing keys: {match}"
+        return True, f"Split matcher OK. confidence={match['confidence']}"
+
+
 def main():
     parser = argparse.ArgumentParser(description="ReelTug smoke tests (non-destructive by default).")
     parser.add_argument("--live-api", action="store_true", help="Run real API queue fetch smoke test.")
@@ -107,6 +149,7 @@ def main():
         ("preview_generation", preview_generation_smoke),
         ("render_prep", render_prep_smoke),
         ("split_remap", split_remap_smoke),
+        ("split_match", split_match_smoke),
     ]
 
     failures = 0

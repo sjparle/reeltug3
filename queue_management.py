@@ -180,6 +180,7 @@ class QueueManagement:
         reel.setdefault("subtitle", "")
         reel.setdefault("pre_reverse_required", False)
         reel.setdefault("pre_reversed", False)
+        reel.setdefault("split_match_suggestions", {})
         return reel
 
     def _all_split_working_files_exist(self, reel: Dict[str, Any]) -> bool:
@@ -251,6 +252,7 @@ class QueueManagement:
         reel_dict["source_video_dir"] = video_dir
         reel_dict["pre_reverse_required"] = has_reverse_comment
         reel_dict["pre_reversed"] = False
+        reel_dict["split_match_suggestions"] = {}
         should_preprocess = str(file_type).lower() == ".avi" or has_reverse_comment
         if should_preprocess:
             preprocess_dir = os.path.join(TEMP_VIDEO_PROCESSING_DIR, "preprocess", str(reel_payload["id"]))
