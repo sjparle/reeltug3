@@ -5,6 +5,29 @@ Use it as a quick "what changed and why" log before modifying the codebase.
 
 ## 2026-03-03
 
+### Pre-Reverse In Preprocess + Split Order Normalization
+- Added queue-time pre-reverse routing for reels with reverse comment (`content_int == 8`):
+  - such reels now set `pre_reverse_required=True` and enter `prep_state=TO_PREP` even when source is already `.mov`.
+- Preprocess now creates working MOV outputs for pre-reverse reels and marks `pre_reversed=True` on completion.
+- Pre-reverse transform uses ffmpeg video filter chain `reverse,hflip,vflip` to preserve the existing 180-degree correction behavior.
+- For split reels under pre-reverse, preprocess remaps source split order to output order so editor flow appears as:
+  - `SP3 -> SP2 -> SP1` (for a 3-split reel), by writing reversed outputs into `SP1..SPN` working slots.
+- Main editor reverse defaults were hardened to avoid double-reverse:
+  - reverse comment no longer auto-checks reverse UI when reel is already `pre_reversed`.
+  - `_default_reverse_for_reel()` now returns `False` for pre-reversed reels.
+- Added split-level reverse intent tracking in editor:
+  - `reverse_set_by_operator=True` only when operator changes reverse away from default.
+- Render reverse guard now respects pre-reversed media:
+  - if reel is `pre_reversed=True` and split reverse was not explicitly set by operator, render skips reverse.
+  - trim audio branch now also keys off effective reverse decision (not raw stored split flag), preventing stale-flag mismatches.
+- Queue table prep-state column now includes lightweight diagnostics:
+  - `req_rev=<0|1>` and `pre_rev=<0|1>`.
+- Added deterministic smoke test for split remap math:
+  - verifies pre-reverse split source mapping (`SP3,SP2,SP1 -> SP1,SP2,SP3`) for 3-way split.
+
+Why:
+- Operators now edit reverse-comment reels in the correct orientation/direction during preview/edit stages, while keeping post-edit reverse available for manual fallback cases.
+
 ### Queue/Editor State Recovery + Visibility
 - `ui/main_window.py` now sets `fresh_load=True` in `reset_states()` so the app can auto-load the next reel after resets.
 - `add_to_render()` now recovers from invalid/empty `active_reel` by loading the next reel instead of hard-failing.

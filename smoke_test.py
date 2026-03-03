@@ -10,6 +10,7 @@ from PyQt5 import QtWidgets
 
 from config import API_PASSWORD, API_USERNAME
 from preview_handler import PreviewHandler
+from preprocess_handler import source_split_number_for_output
 from ui.workers import workerSignals
 
 
@@ -85,6 +86,16 @@ def render_prep_smoke():
         return False, f"Unexpected fps result from render prep: {fps}"
     return True, f"Render prep OK. choose_fps(R8)={fps}"
 
+def split_remap_smoke():
+    # 3 total split files: output SP1/SP2/SP3 should consume source SP3/SP2/SP1 when pre-reversing.
+    mapped = [source_split_number_for_output(3, out_split_no, True) for out_split_no in (1, 2, 3)]
+    if mapped != [3, 2, 1]:
+        return False, f"Unexpected pre-reverse split mapping for 3-way split: {mapped}"
+    baseline = [source_split_number_for_output(3, out_split_no, False) for out_split_no in (1, 2, 3)]
+    if baseline != [1, 2, 3]:
+        return False, f"Unexpected baseline split mapping for 3-way split: {baseline}"
+    return True, "Split remap mapping OK."
+
 
 def main():
     parser = argparse.ArgumentParser(description="ReelTug smoke tests (non-destructive by default).")
@@ -95,6 +106,7 @@ def main():
         ("queue_fetch", lambda: queue_fetch_smoke(args.live_api)),
         ("preview_generation", preview_generation_smoke),
         ("render_prep", render_prep_smoke),
+        ("split_remap", split_remap_smoke),
     ]
 
     failures = 0

@@ -339,12 +339,24 @@ class ProcessVideo:
         self.current_split = split
         self.reel_id = str(self.reel["id"]) + "_" + str(split)
 
-    def _process_single_split(self, split):
-        self._prepare_split_video(split)
-        self._set_reel_state("TRIMMING")
-        self.trim()
+    def _should_reverse_split(self, split):
         split_cfg = self.reel.get(split, {})
         split_reverse = bool(split_cfg.get("reverse", False))
+        if not split_reverse:
+            return False
+        if bool(self.reel.get("pre_reversed", False)) and not bool(split_cfg.get("reverse_set_by_operator", False)):
+            self._log(
+                f"Split {split + 1} reverse requested but reel is pre-reversed and not explicitly overridden; skipping."
+            )
+            return False
+        return True
+
+    def _process_single_split(self, split):
+        self._prepare_split_video(split)
+        split_reverse = self._should_reverse_split(split)
+        self.current_split_reverse = split_reverse
+        self._set_reel_state("TRIMMING")
+        self.trim()
         self._log(f"Split {split + 1} reverse={split_reverse}")
         if split_reverse:
             self._set_reel_state("REVERSING")
@@ -376,9 +388,7 @@ class ProcessVideo:
                 multi_split_reel = True
                 self._finalize_non_concat_split()
         if self.concat_reel is True:
-            all_splits_reversed = all(
-                bool(self.reel.get(split, {}).get("reverse", False)) for split in range(self.splits + 1)
-            )
+            all_splits_reversed = all(self._should_reverse_split(split) for split in range(self.splits + 1))
             if all_splits_reversed and self.splits > 0:
                 self._log("All splits are reversed; using reverse split concat order.")
                 self.concat_list = list(reversed(self.concat_list))
@@ -395,9 +405,11 @@ class ProcessVideo:
         self.video.release()
         self.current_split = 0
 
+        split_reverse = self._should_reverse_split(0)
+        self.current_split_reverse = split_reverse
         self._set_reel_state("TRIMMING")
         self.trim()
-        if self.reel[0]["reverse"] is True:
+        if split_reverse:
             self._set_reel_state("REVERSING")
             self.reverse()
         if self.increase_fps is True:
@@ -533,13 +545,14 @@ class ProcessVideo:
         self.trim_video_out_dir = os.path.join(self.processing_video_folder, video_out_name)
         self.concat_list.append(self.trim_video_out_dir)
         preserve_or_pad_audio = self.any_split_has_audio and not self.add_music
-        if preserve_or_pad_audio and self.reel[self.current_split]['reverse'] is True:
+        split_reverse = bool(getattr(self, "current_split_reverse", self.reel[self.current_split].get("reverse", False)))
+        if preserve_or_pad_audio and split_reverse is True:
             self._log("Reverse is enabled for this split; source audio is not preserved, padding with silent audio.")
             self._run_command(
                 f'{self.ffmpeg_cmd} -hide_banner -y -ss {trim_start_timecode} -to {trim_end_timecode} -i "{video_dir}" -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=48000 -map 0:v:0 -map 1:a:0 -shortest -vf "format=yuv422p10le" -c:v prores_ks -profile:v 3 -vendor apl0 -c:a pcm_s16le "{self.trim_video_out_dir}"',
                 shell=True,
             )
-        elif preserve_or_pad_audio and self.reel[self.current_split]['reverse'] is False:
+        elif preserve_or_pad_audio and split_reverse is False:
             split_has_audio = self.split_has_audio.get(self.current_split, False)
             if split_has_audio:
                 self._run_command(

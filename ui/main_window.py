@@ -547,7 +547,9 @@ class MainWindow(QtWidgets.QMainWindow):
         reel_data["trim_data"][current_split] = {"start_frame": start_frame, "end_frame": end_frame}
         if current_split not in self.active_reel:
             self.active_reel[current_split] = {}
-        self.active_reel[current_split]["reverse"] = self.checkbox_reverse.checkState() == 2
+        split_reverse = self.checkbox_reverse.checkState() == 2
+        self.active_reel[current_split]["reverse"] = split_reverse
+        self.active_reel[current_split]["reverse_set_by_operator"] = (split_reverse != self._default_reverse_for_reel())
         if self.line_override_fps.text() != str(self.choose_fps(self.active_reel["film_type"])):
             self.active_reel[current_split]["fps"] = int(self.line_override_fps.text())
         self.active_reel[current_split]["edited"] = True
@@ -557,6 +559,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.add_new_qc_comments()
 
     def _default_reverse_for_reel(self):
+        if self.active_reel.get("pre_reversed"):
+            return False
         for qc_comment in self.active_reel.get("qc_data", []):
             if qc_comment.get("content_int") == 8:
                 return True
@@ -615,7 +619,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if qc_comment["content_int"] == 9:
                 self.pop_up_message("This reel has sound.", "Reel has sound")
                 self.checkbox_add_music.setChecked(False)
-            if qc_comment["content_int"] == 8:
+            if qc_comment["content_int"] == 8 and not self.active_reel.get("pre_reversed"):
                 self.checkbox_reverse.setChecked(True)
             if qc_comment["content_int"] is None:
                 str_comments += qc_comment["content_str"] + "\n"

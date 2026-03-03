@@ -15,6 +15,7 @@ Use this checklist at the start of a new coding-agent session.
    - `python -m py_compile run.py ui\main_window.py ui\render_window.py ui\queue_window.py ui\workers.py ui\resources.py`
 3. Run smoke checks:
    - `python smoke_test.py`
+   - includes pre-reverse split remap verification (`split_remap`)
 
 Optional (if credentials are configured):
 - `python smoke_test.py --live-api`
