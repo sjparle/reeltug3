@@ -19,6 +19,20 @@ Notes:
 python run.py
 ```
 
+## Build EXE (PyInstaller)
+Use the checked-in build script:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
+```
+
+Output:
+- `dist\ReelTug.exe`
+
+Notes:
+- `ffmpeg.exe` and `ffprobe.exe` are included automatically if present in project root.
+- UI files and icons are bundled for one-file runtime extraction.
+- Build uses `--windowed` (no admin elevation manifest).
+
 ## Requirements
 Install Python dependencies:
 ```powershell

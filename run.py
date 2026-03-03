@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPalette
 
 from ui.main_window import MainWindow
+from ui.resources import resource_path
 
 
 myappid = "reeltug2"
@@ -29,7 +30,7 @@ if __name__ == "__main__":
     palette.setColor(QPalette.Link, QColor(42, 130, 218))
     palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
     palette.setColor(QPalette.HighlightedText, Qt.black)
-    app.setWindowIcon(QtGui.QIcon("gui/reeltug_icon.png"))
+    app.setWindowIcon(QtGui.QIcon(resource_path("gui/reeltug_icon.png")))
     app.setPalette(palette)
     window = MainWindow()
     app.exec_()
