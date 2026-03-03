@@ -1,0 +1,13 @@
+PyQt5
+python-vlc
+opencv-python
+requests
+numpy
+natsort
+Pillow
+psutil
+
+# Optional GPU preview acceleration
+# torch
+# torchvision
+# GPUtil

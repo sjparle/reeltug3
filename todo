@@ -1,0 +1,22 @@
+no versions in response????
+
+
+3) render
+music management - speak with mark      
+
+
+5) add interpolation - in progress
+
+other:
+change video playback method / implement network .mov renderer / trim override from timeline?
+improve trim accuracy
+check qc comments work
+rescan reel logic
+check for extremely short reels/display duration
+disable user interaction with tables
+make function for tristan autoinvoice reel size difference
+api: change edited state to pass?
+add refund reel checkbox?
+add pass or fail?
+improve dvd splitting logic
+hotkeys for frame select
