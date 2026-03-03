@@ -56,6 +56,9 @@ class PreviewHandler:
             print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
         else:
             print("GPU acceleration not available, using multi-threading")
+
+    def _preview_log(self, reel_id, split, message):
+        print(f"[preview][reel={reel_id}][split={split}] {message}")
     
     def get_gpu_info(self):
         """Get GPU information and usage"""
@@ -271,10 +274,14 @@ class PreviewHandler:
 
     def preview_manager(self):
         """ filter list to only include items that have state queued""" 
-        while self.mainwindow.previews_loaded < self.max_previews:
+        while not getattr(self.mainwindow, "stop_background_workers", False):
             with self.mainwindow.queue_lock:
                 queued_reels = [
-                    d for d in self.mainwindow.queue_batches if d['state'] == "RECORDED" and d['preview_loaded'] is False
+                    d
+                    for d in self.mainwindow.queue_batches
+                    if d['state'] == "RECORDED"
+                    and d['preview_loaded'] is False
+                    and d.get("prep_state", "READY") == "READY"
                 ]
                 previews_loaded = [d for d in self.mainwindow.queue_batches if d['preview_loaded'] is True]
             self.mainwindow.previews_loaded = len(previews_loaded)
@@ -306,9 +313,26 @@ class PreviewHandler:
     def set_previews(self, id, split):
         with self.mainwindow.queue_lock:
             reel = [d for d in self.mainwindow.queue_batches if d['id'] == id][0]
+        if "preview_data" not in reel or split not in reel["preview_data"]:
+            self._preview_log(id, split, "preview_data missing for split; attempting regeneration")
+            self.get_previews(id, split, False)
+        if "preview_data" not in reel or split not in reel["preview_data"]:
+            self._preview_log(id, split, "preview_data still missing after regeneration")
+            return
         reel_previews = reel['preview_data'][split]
+        start_count = len(reel_previews.get("start_previews", {}))
+        end_count = len(reel_previews.get("end_previews", {}))
+        if start_count == 0 or end_count == 0:
+            self._preview_log(id, split, f"empty preview dicts start={start_count} end={end_count}; regenerating")
+            self.get_previews(id, split, False)
+            reel_previews = reel['preview_data'].get(split, reel_previews)
         self.mainwindow.previews_loading = True
-        split_state = self._get_or_create_split_state(reel, split, reel_previews)
+        try:
+            split_state = self._get_or_create_split_state(reel, split, reel_previews)
+        except ValueError as exc:
+            self._preview_log(id, split, f"failed to build split state: {exc}")
+            self.mainwindow.previews_loading = False
+            return
         self._sync_mainwindow_positions(split_state)
 
         start_gui_frame_data = self._render_strip(
@@ -343,6 +367,23 @@ class PreviewHandler:
         video = cv2.VideoCapture(video_dir)
         fps = video.get(cv2.CAP_PROP_FPS)               #init video
         self.total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+        self._preview_log(reel_id, split, f"video={video_dir} opened={video.isOpened()} fps={fps} total_frames={self.total_frames}")
+
+        if not video.isOpened() or fps <= 0 or self.total_frames <= 0:
+            self._preview_log(reel_id, split, "invalid video stream for previews; creating fallback preview frames")
+            fallback = QPixmap(".\\framefail.jpg")
+            start_previews = {"start_frame0": fallback}
+            end_previews = {"end_frame0": fallback}
+            reel_previews = {"start_previews": start_previews, "end_previews": end_previews}
+            if 'preview_data' not in reel_data:
+                reel_data['preview_data'] = {}
+            if split == reel_data['splits']:
+                reel_data['preview_loaded'] = True
+            reel_data['preview_data'][split] = reel_previews
+            reel_data[split] = {}
+            reel_data[split]['edited'] = False
+            video.release()
+            return
 
         
         if splits > 0:
@@ -388,6 +429,8 @@ class PreviewHandler:
         end_frame_indices = []
         end_buffer = 10
         end_start = int(self.total_frames - (self.total_frame_cache_count_end * fps) - end_buffer)
+        if end_start < 0:
+            end_start = 0
         end_frame_cap = end_start
         
         video.set(cv2.CAP_PROP_POS_FRAMES, end_start)
@@ -418,6 +461,12 @@ class PreviewHandler:
             torch.cuda.synchronize()
 
         reel_previews = {}
+        if len(start_previews) == 0:
+            self._preview_log(reel_id, split, "start previews empty; injecting fallback frame")
+            start_previews = {"start_frame0": QPixmap(".\\framefail.jpg")}
+        if len(end_previews) == 0:
+            self._preview_log(reel_id, split, "end previews empty; injecting fallback frame")
+            end_previews = {"end_frame0": QPixmap(".\\framefail.jpg")}
         reel_previews['start_previews'] = start_previews
         reel_previews['end_previews'] = end_previews
         self.mainwindow.previews_loaded += 1
@@ -507,6 +556,12 @@ class PreviewHandler:
     def _get_or_create_split_state(self, reel, split, reel_previews):
         start_keys = sorted(int(k.replace("start_frame", "")) for k in reel_previews['start_previews'].keys())
         end_keys = sorted(int(k.replace("end_frame", "")) for k in reel_previews['end_previews'].keys())
+        if len(start_keys) == 0 or len(end_keys) == 0:
+            raise ValueError(
+                f"empty key set start={len(start_keys)} end={len(end_keys)} "
+                f"start_keys={list(reel_previews.get('start_previews', {}).keys())[:3]} "
+                f"end_keys={list(reel_previews.get('end_previews', {}).keys())[:3]}"
+            )
         start_interval = self.mainwindow.start_interval
         end_interval = self.mainwindow.end_interval
 
