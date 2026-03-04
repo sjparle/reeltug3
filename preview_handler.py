@@ -369,7 +369,10 @@ class PreviewHandler:
                     and d['preview_loaded'] is False
                     and d.get("prep_state", "READY") == "READY"
                 ]
-                previews_loaded = [d for d in self.mainwindow.queue_batches if d['preview_loaded'] is True]
+                previews_loaded = [
+                    d for d in self.mainwindow.queue_batches
+                    if d['preview_loaded'] is True and d.get("state") != "TO_RENDER"
+                ]
             self.mainwindow.previews_loaded = len(previews_loaded)
             self.mainwindow.signal_previews_loaded.emit(self.mainwindow.previews_loaded)
             if len(queued_reels) == 0:
