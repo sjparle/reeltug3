@@ -551,8 +551,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.line_override_fps.text() != str(self.choose_fps(self.active_reel["film_type"])):
             self.active_reel[current_split]["fps"] = int(self.line_override_fps.text())
         self.active_reel[current_split]["edited"] = True
-        if self.checkbox_increase_fps.checkState() == 2:
-            self.active_reel["increase_fps"] = True
+        # FPS interpolation UI has been removed; keep behavior explicitly disabled.
+        self.active_reel["increase_fps"] = False
         self.active_reel["concat"] = self.checkbox_combine.checkState() == 2
         self.add_new_qc_comments()
 
@@ -608,7 +608,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.line_qc_custom_comment.setText("")
         self.line_qc_custom_comment_external.setText("")
         self.checkbox_combine.setChecked(False)
-        self.checkbox_increase_fps.setChecked(False)
         comment_list = [1, 2, 4, 5, 6, 7]
         str_comments = ""
         for qc_comment in self.active_reel["qc_data"]:
