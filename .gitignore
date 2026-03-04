@@ -1,6 +1,8 @@
 cinemusic.mp3
 processing
 *.pickle
+ffmpeg.exe
+ffprobe.exe
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

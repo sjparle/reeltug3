@@ -4,14 +4,34 @@ Windows 11 PyQt5 application for editing cine film scan videos.
 
 ## What It Does
 1. Loads reel jobs from queue API.
-2. Generates preview frames from start/end of each video (including split reels).
-3. Lets operator select trim points and QC comments.
-4. Renders final outputs with ffmpeg (trim, reverse, concat, audio, DVD-related flows).
+2. Preprocesses working media when needed (AVI->MOV and/or pre-reverse based on QC comments).
+3. Generates preview frames from start/end of each working video (including split reels).
+4. Lets operator select trim points and QC comments.
+5. Renders final outputs with ffmpeg (trim, reverse, concat, audio, DVD-related flows).
+
+Notes:
+- Reels with reverse comment (`content_int == 8`) are pre-reversed during preprocess so operators edit right-way-round media.
+- For pre-reversed split reels, preprocess remaps split order so editor navigation appears in reverse split order (e.g. `SP3 -> SP2 -> SP1`).
+- Post-edit reverse remains available and is only applied for pre-reversed reels when explicitly changed by operator.
 
 ## Run
 ```powershell
 python run.py
 ```
+
+## Build EXE (PyInstaller)
+Use the checked-in build script:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_exe.ps1
+```
+
+Output:
+- `dist\ReelTug.exe`
+
+Notes:
+- `ffmpeg.exe` and `ffprobe.exe` are included automatically if present in project root.
+- UI files and icons are bundled for one-file runtime extraction.
+- Build uses `--windowed` (no admin elevation manifest).
 
 ## Requirements
 Install Python dependencies:
@@ -45,6 +65,8 @@ Queue fetch timeout is configurable via `REELTUG_QUEUE_FETCH_TIMEOUT_SECONDS` (d
 python -m py_compile run.py ui\main_window.py ui\render_window.py ui\queue_window.py ui\workers.py ui\resources.py
 python smoke_test.py
 ```
+
+`smoke_test.py` includes split remap verification for pre-reverse behavior.
 
 Optional live API smoke:
 ```powershell

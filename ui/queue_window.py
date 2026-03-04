@@ -49,7 +49,11 @@ class QueueWindow(QtWidgets.QMainWindow):
                 self.table_queue.setItem(row, 2, QTableWidgetItem(str(reel["item_number"])))
                 self.table_queue.setItem(row, 3, QTableWidgetItem(str(reel["id"])))
                 prep_state = reel.get("prep_state", "READY")
-                self.table_queue.setItem(row, 4, QTableWidgetItem(str(prep_state)))
+                debug_flags = (
+                    f"req_rev={int(bool(reel.get('pre_reverse_required', False)))} "
+                    f"pre_rev={int(bool(reel.get('pre_reversed', False)))}"
+                )
+                self.table_queue.setItem(row, 4, QTableWidgetItem(f"{prep_state} | {debug_flags}"))
                 self.table_queue.setItem(row, 5, QTableWidgetItem(str(reel["splits"])))
                 row += 1
 

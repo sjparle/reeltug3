@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 
-from config import CINE_EDITING_DIR, TRANSFERRING_DIRECTORY, QUEUE_FETCH_TIMEOUT_SECONDS
+from config import CINE_EDITING_DIR, TEMP_VIDEO_PROCESSING_DIR, TRANSFERRING_DIRECTORY, QUEUE_FETCH_TIMEOUT_SECONDS
 from path_utils import replace_split_token
 from reel_models import ReelBatch
 
@@ -111,6 +111,8 @@ class QueueManagement:
             "has_sound",
             "prep_state",
             "prep_error",
+            "pre_reverse_required",
+            "pre_reversed",
         ]
         removed_count = 0
         added_count = 0
@@ -132,8 +134,9 @@ class QueueManagement:
                         existing[key] = fresh[key]
                 self._normalize_reel_dict(existing)
                 source_is_avi = str(existing.get("source_video_dir", "")).lower().endswith(".avi")
+                requires_pre_reverse = bool(existing.get("pre_reverse_required", False))
                 working_all_exist = self._all_split_working_files_exist(existing)
-                if source_is_avi and not working_all_exist and existing.get("prep_state") in {"FAILED", "READY"}:
+                if (source_is_avi or requires_pre_reverse) and not working_all_exist and existing.get("prep_state") in {"FAILED", "READY"}:
                     existing["prep_state"] = "TO_PREP"
                     existing.pop("prep_error", None)
                 if existing.get("prep_state") not in {"PREPARING", "READY"}:
@@ -175,6 +178,9 @@ class QueueManagement:
         reel.setdefault("increase_fps", False)
         reel.setdefault("title", "")
         reel.setdefault("subtitle", "")
+        reel.setdefault("pre_reverse_required", False)
+        reel.setdefault("pre_reversed", False)
+        reel.setdefault("split_match_suggestions", {})
         return reel
 
     def _all_split_working_files_exist(self, reel: Dict[str, Any]) -> bool:
@@ -204,6 +210,7 @@ class QueueManagement:
 
         qc_data = reel_payload.get("comments", [])
         has_mov = any(comment.get("content_int") == 9 for comment in qc_data)
+        has_reverse_comment = any(comment.get("content_int") == 8 for comment in qc_data)
         for comment in qc_data:
             comment["added_in_reeltug"] = False
 
@@ -243,8 +250,15 @@ class QueueManagement:
         reel_dict = reel.to_dict()
         reel_dict["has_sound"] = has_mov
         reel_dict["source_video_dir"] = video_dir
-        if str(file_type).lower() == ".avi":
-            reel_dict["working_video_dir"] = os.path.splitext(video_dir)[0] + ".mov"
+        reel_dict["pre_reverse_required"] = has_reverse_comment
+        reel_dict["pre_reversed"] = False
+        reel_dict["split_match_suggestions"] = {}
+        should_preprocess = str(file_type).lower() == ".avi" or has_reverse_comment
+        if should_preprocess:
+            preprocess_dir = os.path.join(TEMP_VIDEO_PROCESSING_DIR, "preprocess", str(reel_payload["id"]))
+            source_base_name = os.path.splitext(os.path.basename(video_dir))[0]
+            suffix = "-PREVREV.mov" if has_reverse_comment else "-WORK.mov"
+            reel_dict["working_video_dir"] = os.path.join(preprocess_dir, f"{source_base_name}{suffix}")
             reel_dict["prep_state"] = "TO_PREP"
         else:
             reel_dict["working_video_dir"] = video_dir
