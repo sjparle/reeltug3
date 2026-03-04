@@ -1,0 +1,72 @@
+name: CI Render Regression
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on:
+      - self-hosted
+      - windows
+      - reeltug
+    timeout-minutes: 120
+    env:
+      REELTUG_TEST_FIXTURE_DIR: ${{ vars.REELTUG_TEST_FIXTURE_DIR }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate FFmpeg
+        shell: powershell
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Validate fixture directory is configured
+        shell: powershell
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:REELTUG_TEST_FIXTURE_DIR)) {
+            Write-Error "Repository variable REELTUG_TEST_FIXTURE_DIR is not set."
+          }
+          if (-not (Test-Path -LiteralPath $env:REELTUG_TEST_FIXTURE_DIR)) {
+            Write-Error "Fixture directory does not exist: $env:REELTUG_TEST_FIXTURE_DIR"
+          }
+          Get-ChildItem -LiteralPath $env:REELTUG_TEST_FIXTURE_DIR
+
+      - name: Runner diagnostics
+        shell: powershell
+        run: |
+          Write-Host "Machine: $env:COMPUTERNAME"
+          Write-Host "User: $env:USERNAME"
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Write-Host "Fixture dir: $env:REELTUG_TEST_FIXTURE_DIR"
+          python --version
+          where.exe python
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Syntax check
+        run: |
+          python -m py_compile run.py ui\main_window.py ui\render_window.py ui\queue_window.py ui\workers.py ui\resources.py tests\render_regression\run_render_regression.py
+
+      - name: Smoke test
+        run: |
+          python smoke_test.py
+
+      - name: Render regression
+        run: |
+          python tests\render_regression\run_render_regression.py
