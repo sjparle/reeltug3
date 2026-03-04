@@ -17,6 +17,7 @@
    - Queue UI keeps reels visible through preview states (not only initial `RECORDED`).
 4. Edit interaction:
    - User selects split navigation, trim highlights, QC comments in `MainWindow`.
+   - Preview strips support small-step (`<` / `>`) and 5-step (`<<` / `>>`) paging.
    - When available, split crossover suggestions are preselected on load for unedited splits.
    - Status bar shows split-match state and confidence (auto suggestion vs operator-adjusted).
    - Highlight/trim/QC data is stored back onto active reel dict.

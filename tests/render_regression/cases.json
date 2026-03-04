@@ -1,0 +1,51 @@
+{
+  "fixtures_root_env": "REELTUG_TEST_FIXTURE_DIR",
+  "default_fixtures_root": "D:\\processing\\test_files_trimmed",
+  "cases": [
+    {
+      "id": "single_has_sound_no_music",
+      "input": "has_sound.avi",
+      "splits": 0,
+      "concat": false,
+      "reverse": [false],
+      "add_music": false,
+      "has_sound": true
+    },
+    {
+      "id": "single_reverse_no_music",
+      "input": "reverse.avi",
+      "splits": 0,
+      "concat": false,
+      "reverse": [true],
+      "add_music": false,
+      "has_sound": false
+    },
+    {
+      "id": "single_silent_add_music",
+      "input": "silent_add_music.avi",
+      "splits": 0,
+      "concat": false,
+      "reverse": [false],
+      "add_music": true,
+      "has_sound": false
+    },
+    {
+      "id": "single_silent_no_music",
+      "input": "silent_dont_add_music.avi",
+      "splits": 0,
+      "concat": false,
+      "reverse": [false],
+      "add_music": false,
+      "has_sound": false
+    },
+    {
+      "id": "split_concat_reverse",
+      "input": "multi_split_concat_reverse-SP1.avi",
+      "splits": 1,
+      "concat": true,
+      "reverse": [true, true],
+      "add_music": false,
+      "has_sound": false
+    }
+  ]
+}

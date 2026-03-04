@@ -38,6 +38,8 @@ class PreviewHandler:
         self.mainwindow = mainwindow
         self.workerSignals = workerSignals
         self.max_previews = 300
+        # Number of preview slots moved by << / >> controls.
+        self.big_preview_jump_slots = 5
         
         # Check for GPU acceleration
         self.use_gpu = TORCH_AVAILABLE and torch.cuda.is_available()
@@ -59,6 +61,90 @@ class PreviewHandler:
 
     def _preview_log(self, reel_id, split, message):
         print(f"[preview][reel={reel_id}][split={split}] {message}")
+
+    def _navigation_step(self, interval, direction):
+        if direction in ("prev_big", "next_big"):
+            return interval * self.big_preview_jump_slots
+        return interval
+
+    def _video_path_for_split(self, reel_data, split):
+        video_dir = reel_data["video_dir"]
+        if split > 0:
+            split_no = split + 1
+            video_dir = replace_split_token(video_dir, split_no)
+        return video_dir
+
+    def _extract_preview_frames(self, video_dir, frame_indices, frame_type):
+        if len(frame_indices) == 0:
+            return {}
+        frames = []
+        valid_indices = []
+        video = cv2.VideoCapture(video_dir)
+        if not video.isOpened():
+            video.release()
+            return {}
+        for idx in frame_indices:
+            if idx < 0:
+                continue
+            video.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+            ret, frame = video.read()
+            if not ret:
+                continue
+            frames.append(frame)
+            valid_indices.append(int(idx))
+        video.release()
+        return self.process_frame_batch_optimized(frames, valid_indices, frame_type)
+
+    def _ensure_start_range_loaded(self, reel_id, split, reel_previews, target_last_index):
+        start_previews = reel_previews.get("start_previews", {})
+        if len(start_previews) == 0:
+            return
+        start_keys = sorted(int(k.replace("start_frame", "")) for k in start_previews.keys())
+        start_interval = self.mainwindow.start_interval
+        total_frames = int(reel_previews.get("video_total_frames", 0))
+        if total_frames <= 0:
+            return
+        max_target = max(0, total_frames - 1)
+        target_last_index = min(int(target_last_index), max_target)
+        if target_last_index <= start_keys[-1]:
+            return
+
+        load_from = start_keys[-1] + start_interval
+        if load_from > target_last_index:
+            return
+        frame_indices = list(range(load_from, target_last_index + 1, start_interval))
+        if len(frame_indices) == 0:
+            return
+        video_dir = self._video_path_for_split(self.reel_data, split)
+        self._preview_log(reel_id, split, f"loading additional start previews {load_from}->{target_last_index}")
+        added = self._extract_preview_frames(video_dir, frame_indices, "start_frame")
+        if len(added) > 0:
+            start_previews.update(added)
+
+    def _ensure_end_range_loaded(self, reel_id, split, reel_previews, target_first_index):
+        end_previews = reel_previews.get("end_previews", {})
+        if len(end_previews) == 0:
+            return
+        end_keys = sorted(int(k.replace("end_frame", "")) for k in end_previews.keys())
+        end_interval = self.mainwindow.end_interval
+        total_frames = int(reel_previews.get("video_total_frames", 0))
+        if total_frames <= 0:
+            return
+        target_first_index = max(0, int(target_first_index))
+        if target_first_index >= end_keys[0]:
+            return
+
+        load_to = end_keys[0] - end_interval
+        if load_to < target_first_index:
+            return
+        frame_indices = list(range(target_first_index, load_to + 1, end_interval))
+        if len(frame_indices) == 0:
+            return
+        video_dir = self._video_path_for_split(self.reel_data, split)
+        self._preview_log(reel_id, split, f"loading additional end previews {target_first_index}->{load_to}")
+        added = self._extract_preview_frames(video_dir, frame_indices, "end_frame")
+        if len(added) > 0:
+            end_previews.update(added)
     
     def get_gpu_info(self):
         """Get GPU information and usage"""
@@ -313,6 +399,7 @@ class PreviewHandler:
     def set_previews(self, id, split):
         with self.mainwindow.queue_lock:
             reel = [d for d in self.mainwindow.queue_batches if d['id'] == id][0]
+        self.reel_data = reel
         if "preview_data" not in reel or split not in reel["preview_data"]:
             self._preview_log(id, split, "preview_data missing for split; attempting regeneration")
             self.get_previews(id, split, False)
@@ -358,12 +445,10 @@ class PreviewHandler:
     def get_previews(self, reel_id, split, set_preview):
         with self.mainwindow.queue_lock:
             reel_data = [d for d in self.mainwindow.queue_batches if d['id'] == reel_id][0]
+        self.reel_data = reel_data
         splits = reel_data['splits']
-        video_dir = reel_data['video_dir']
+        video_dir = self._video_path_for_split(reel_data, split)
         print(video_dir)
-        if split > 0:
-            split_no = split + 1
-            video_dir = replace_split_token(video_dir, split_no)
         print("getting previews for:", video_dir)
         video = cv2.VideoCapture(video_dir)
         fps = video.get(cv2.CAP_PROP_FPS)               #init video
@@ -375,7 +460,12 @@ class PreviewHandler:
             fallback = QPixmap(".\\framefail.jpg")
             start_previews = {"start_frame0": fallback}
             end_previews = {"end_frame0": fallback}
-            reel_previews = {"start_previews": start_previews, "end_previews": end_previews}
+            reel_previews = {
+                "start_previews": start_previews,
+                "end_previews": end_previews,
+                "video_total_frames": 1,
+                "video_fps": fps,
+            }
             if 'preview_data' not in reel_data:
                 reel_data['preview_data'] = {}
             if split == reel_data['splits']:
@@ -470,6 +560,8 @@ class PreviewHandler:
             end_previews = {"end_frame0": QPixmap(".\\framefail.jpg")}
         reel_previews['start_previews'] = start_previews
         reel_previews['end_previews'] = end_previews
+        reel_previews['video_total_frames'] = self.total_frames
+        reel_previews['video_fps'] = fps
         self.mainwindow.previews_loaded += 1
         if 'preview_data' not in reel_data:
             reel_data['preview_data'] = {}
@@ -482,29 +574,42 @@ class PreviewHandler:
 
     def change_start_previews(self, direction, start_loaded_once):
         reel_preview_data = self.mainwindow.active_reel 
+        self.reel_data = reel_preview_data
         reel_split_previews = reel_preview_data['preview_data'][self.mainwindow.current_split]
         reel_start_previews = reel_split_previews['start_previews']
         split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
         start_interval = self.mainwindow.start_interval
-        min_index = split_state['start_min']
-        max_page_start = split_state['start_max_page']
-        step = start_interval * 5 if direction in ("prev_big", "next_big") else start_interval
+        step = self._navigation_step(start_interval, direction)
 
         if direction in ("prev", "prev_big"):             
-            split_state['start_position'] = split_state['start_position'] - step
-            if split_state['start_position'] < min_index:
-                split_state['start_position'] = min_index
+            candidate = split_state['start_position'] - step
+            split_state['start_position'] = max(candidate, split_state['start_min'])
         elif direction in ("next", "next_big"):
-            if split_state['start_position'] >= max_page_start:
+            candidate = split_state['start_position'] + step
+            target_last_index = candidate + (start_interval * 9)
+            self._ensure_start_range_loaded(
+                reel_preview_data["id"],
+                self.mainwindow.current_split,
+                reel_split_previews,
+                target_last_index,
+            )
+            split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
+            if split_state['start_position'] >= split_state['start_max_page']:
                 return
-            split_state['start_position'] = split_state['start_position'] + step
-            if split_state['start_position'] > max_page_start:
-                split_state['start_position'] = max_page_start
+            split_state['start_position'] = min(candidate, split_state['start_max_page'])
         elif direction == "reload":
-            saved_start = self._saved_start_position(reel_preview_data, self.mainwindow.current_split)
-            if saved_start is None:
-                saved_start = split_state['start_min']
-            split_state['start_position'] = saved_start
+            candidate = self._saved_start_position(reel_preview_data, self.mainwindow.current_split)
+            if candidate is None:
+                candidate = split_state['start_min']
+            target_last_index = candidate + (start_interval * 9)
+            self._ensure_start_range_loaded(
+                reel_preview_data["id"],
+                self.mainwindow.current_split,
+                reel_split_previews,
+                target_last_index,
+            )
+            split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
+            split_state['start_position'] = min(max(candidate, split_state['start_min']), split_state['start_max_page'])
 
         self._sync_mainwindow_positions(split_state)
         start_gui_frame_data = self._render_strip(
@@ -518,27 +623,39 @@ class PreviewHandler:
 
     def change_end_previews(self, direction, end_loaded_once):
         reel_preview_data = self.mainwindow.active_reel
+        self.reel_data = reel_preview_data
         reel_split_previews = reel_preview_data['preview_data'][self.mainwindow.current_split]
         reel_end_previews = reel_split_previews['end_previews'] 
         split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
         end_interval = self.mainwindow.end_interval 
-        min_frame_no = split_state['end_min']
-        init_frame_no = split_state['end_max_page']
-        step = end_interval * 5 if direction in ("prev_big", "next_big") else end_interval
+        step = self._navigation_step(end_interval, direction)
 
         if direction in ("prev", "prev_big"):             
-            split_state['end_position'] = split_state['end_position'] - step
-            if split_state['end_position'] < min_frame_no:
-                split_state['end_position'] = min_frame_no
+            candidate = split_state['end_position'] - step
+            target_first_index = candidate
+            self._ensure_end_range_loaded(
+                reel_preview_data["id"],
+                self.mainwindow.current_split,
+                reel_split_previews,
+                target_first_index,
+            )
+            split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
+            split_state['end_position'] = max(candidate, split_state['end_min'])
         elif direction in ("next", "next_big"):
-            split_state['end_position'] = split_state['end_position'] + step
-            if split_state['end_position'] > init_frame_no:
-                split_state['end_position'] = init_frame_no
+            candidate = split_state['end_position'] + step
+            split_state['end_position'] = min(candidate, split_state['end_max_page'])
         elif direction == "reload":
-            saved_end = self._saved_end_position(reel_preview_data, self.mainwindow.current_split)
-            if saved_end is None:
-                saved_end = split_state['end_max_page']
-            split_state['end_position'] = saved_end
+            candidate = self._saved_end_position(reel_preview_data, self.mainwindow.current_split)
+            if candidate is None:
+                candidate = split_state['end_max_page']
+            self._ensure_end_range_loaded(
+                reel_preview_data["id"],
+                self.mainwindow.current_split,
+                reel_split_previews,
+                candidate,
+            )
+            split_state = self._get_or_create_split_state(reel_preview_data, self.mainwindow.current_split, reel_split_previews)
+            split_state['end_position'] = min(max(candidate, split_state['end_min']), split_state['end_max_page'])
 
         self._sync_mainwindow_positions(split_state)
         end_gui_frame_data = self._render_strip(

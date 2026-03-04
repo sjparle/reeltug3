@@ -113,6 +113,25 @@
          <item row="2" column="0">
           <layout class="QHBoxLayout" name="horizontalLayout_2">
            <item>
+            <widget class="QPushButton" name="button_prev_start_prev_big">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>30</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>50</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>&lt;&lt;</string>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QPushButton" name="button_prev_start_prev">
              <property name="minimumSize">
               <size>
@@ -298,10 +317,48 @@
              </property>
             </widget>
            </item>
+           <item>
+            <widget class="QPushButton" name="button_prev_start_next_big">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>30</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>50</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>&gt;&gt;</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </item>
          <item row="4" column="0">
           <layout class="QHBoxLayout" name="horizontalLayout_5">
+           <item>
+            <widget class="QPushButton" name="button_prev_end_prev_big">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>30</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>50</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>&lt;&lt;</string>
+             </property>
+            </widget>
+           </item>
            <item>
             <widget class="QPushButton" name="button_prev_end_prev">
              <property name="minimumSize">
@@ -479,6 +536,25 @@
              </property>
              <property name="text">
               <string>&gt;</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="button_prev_end_next_big">
+             <property name="minimumSize">
+              <size>
+               <width>30</width>
+               <height>30</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>50</width>
+               <height>50</height>
+              </size>
+             </property>
+             <property name="text">
+              <string>&gt;&gt;</string>
              </property>
             </widget>
            </item>
@@ -1063,25 +1139,6 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QLabel" name="label_increase_fps">
-                    <property name="font">
-                     <font>
-                      <pointsize>12</pointsize>
-                     </font>
-                    </property>
-                    <property name="text">
-                     <string>Increase FPS</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QCheckBox" name="checkbox_increase_fps">
-                    <property name="text">
-                     <string/>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
                    <widget class="QLabel" name="label_override_fps">
                     <property name="font">
                      <font>
@@ -1220,7 +1277,7 @@
      <x>0</x>
      <y>0</y>
      <width>2503</width>
-     <height>21</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuOpen">
