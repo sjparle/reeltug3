@@ -16,7 +16,7 @@ class QueueManagement:
     def queue_handler(self):
         try:
             queue_request, response = self.mainwindow.req.make_get(
-                "/cine/cine-tug/get-to-edit-all",
+                "/cine/cine-tug/get-to-edit-all-ai",
                 timeout=QUEUE_FETCH_TIMEOUT_SECONDS,
                 retries=1,
             )
@@ -66,6 +66,12 @@ class QueueManagement:
             if new_reel_dict is None:
                 continue
             discovered_reels.append(new_reel_dict)
+
+    def _normalize_api_state(self, raw_state: Any) -> str:
+        state_str = str(raw_state).strip().upper()
+        if state_str in {"2", "RECORDED"}:
+            return "RECORDED"
+        return state_str if state_str else "RECORDED"
 
     def _merge_queue_reels(self, discovered_reels):
         discovered_by_id = {}
@@ -158,10 +164,20 @@ class QueueManagement:
                     continue
                 removed_count += 1
             self.mainwindow.queue_batches = keep_batches
+            state_counts = {}
+            for reel in self.mainwindow.queue_batches:
+                state = str(reel.get("state", "UNKNOWN"))
+                state_counts[state] = state_counts.get(state, 0) + 1
+            prep_counts = {}
+            for reel in self.mainwindow.queue_batches:
+                prep_state = str(reel.get("prep_state", "UNKNOWN"))
+                prep_counts[prep_state] = prep_counts.get(prep_state, 0) + 1
         print(
             f"queue refresh: discovered={len(discovered_reels)} added={added_count} "
             f"updated={updated_count} removed={removed_count}"
         )
+        print(f"queue states: {state_counts}")
+        print(f"queue prep states: {prep_counts}")
 
     def _normalize_reel_dict(self, reel: Dict[str, Any]) -> Dict[str, Any]:
         if "splits" not in reel:
@@ -228,7 +244,7 @@ class QueueManagement:
             item_number=reel_payload["item_number"],
             order_number=order_number,
             edited=reel_payload["edited"],
-            state=reel_payload["state"],
+            state=self._normalize_api_state(reel_payload.get("state")),
             time_arrived=order_payload["order"]["time_arrived"],
             video_out_dir=os.path.join(TRANSFERRING_DIRECTORY, order_number, "CINE"),
             add_music=reel_payload["music"],
@@ -259,7 +275,15 @@ class QueueManagement:
             source_base_name = os.path.splitext(os.path.basename(video_dir))[0]
             suffix = "-PREVREV.mov" if has_reverse_comment else "-WORK.mov"
             reel_dict["working_video_dir"] = os.path.join(preprocess_dir, f"{source_base_name}{suffix}")
-            reel_dict["prep_state"] = "TO_PREP"
+            if self._all_split_working_files_exist(reel_dict):
+                working_path = reel_dict["working_video_dir"]
+                reel_dict["video_dir"] = working_path
+                reel_dict["video_name"] = os.path.basename(working_path)
+                reel_dict["file_type"] = ".mov"
+                reel_dict["prep_state"] = "READY"
+                reel_dict["pre_reversed"] = has_reverse_comment
+            else:
+                reel_dict["prep_state"] = "TO_PREP"
         else:
             reel_dict["working_video_dir"] = video_dir
             reel_dict["prep_state"] = "READY"

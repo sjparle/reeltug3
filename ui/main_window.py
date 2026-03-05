@@ -50,6 +50,8 @@ class MainWindow(QtWidgets.QMainWindow):
     signal_start_preview_manager = pyqtSignal()
     signal_start_preprocess_manager = pyqtSignal()
     signal_previews_loaded = pyqtSignal(int)
+    signal_preview_ready = pyqtSignal(int)
+    signal_reels_in_render = pyqtSignal(int)
 
     def __init__(self):
         super(MainWindow, self).__init__()
@@ -98,7 +100,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_interval = 8
         self.accepted_video_formats = [".mp4", ".mov", ".avi"]
 
-        self.vlc_instance = vlc.Instance()
+        # Keep libVLC stderr noise out of app stdout (plugin cache and audio backend warnings).
+        self.vlc_instance = vlc.Instance("--quiet", "--verbose=-1")
         self.mediaplayer = self.vlc_instance.media_player_new()
         self.mediaplayer.set_hwnd(int(self.video_frame.winId()))
         self.video_slider.setToolTip("Position")
@@ -148,6 +151,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.signal_start_preview_manager.connect(self.start_preview_manager_thread)
         self.signal_start_preprocess_manager.connect(self.start_preprocess_manager_thread)
         self.signal_previews_loaded.connect(self.gui_update_previews_loaded)
+        self.signal_preview_ready.connect(self.on_preview_ready)
+        self.signal_reels_in_render.connect(self.gui_update_reels_in_render)
 
         self.preview_threadpool = QtCore.QThreadPool()
         self.queue_window = QueueWindow(self)
@@ -155,8 +160,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_window = SettingsWindow(self)
         self.split_match_status_label = QLabel("Split Match: N/A")
         self.statusBar().addPermanentWidget(self.split_match_status_label)
-        self.pop_up_message("Is ConvertX2DVDClosed?", "ConvertX2DVD")
         self.signal_start_preprocess_manager.emit()
+        self.refresh_reels_in_render_count()
 
     def closeEvent(self, event):
         self.stop_background_workers = True
@@ -169,6 +174,23 @@ class MainWindow(QtWidgets.QMainWindow):
     def fetch_previews(self, main_window, worker_signals, reel_id, set_preview):
         previews_worker = PreviewHandler(main_window, worker_signals)
         previews_worker.fetch_previews(reel_id, set_preview)
+        if set_preview:
+            self.signal_preview_ready.emit(reel_id)
+
+    def on_preview_ready(self, reel_id):
+        if not isinstance(self.active_reel, dict):
+            return
+        if self.active_reel.get("id") != reel_id:
+            return
+        if "preview_data" not in self.active_reel:
+            return
+        target_split = self.current_split if self.current_split in self.active_reel["preview_data"] else 0
+        if target_split not in self.active_reel["preview_data"]:
+            return
+        try:
+            self.set_previews(reel_id, target_split)
+        except KeyError as exc:
+            print(f"[on_preview_ready] failed to set previews for reel {reel_id} split {target_split}: {exc}")
 
     def start_preview_manager_thread(self):
         if self.caching_previews:
@@ -271,11 +293,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         else:
             with self.queue_lock:
-                non_loading_reels = [d for d in self.queue_batches if d["state"] == "RECORDED"]
-            if len(non_loading_reels) == 0:
+                ready_reels = [
+                    d for d in self.queue_batches
+                    if d["state"] == "RECORDED" and d.get("prep_state", "READY") == "READY"
+                ]
+                waiting_prep = [
+                    d for d in self.queue_batches
+                    if d["state"] == "RECORDED" and d.get("prep_state", "READY") != "READY"
+                ]
+            if len(ready_reels) == 0:
+                if len(waiting_prep) > 0:
+                    self.pop_up_message("No reels are ready yet. Waiting for preprocess to finish.", "Preprocessing")
+                    return
                 self.pop_up_message("No more reels to edit.", "Out of reels")
                 return
-            self.active_reel = non_loading_reels[-1]
+            self.active_reel = ready_reels[-1]
             self.active_reel["state"] = "EDITING"
             self.previews_loading = True
             self.fetch_previews_thread(self.active_reel["id"], True)
@@ -329,12 +361,9 @@ class MainWindow(QtWidgets.QMainWindow):
         load_video = VideoLoader(self)
         load_video.open_video(video_dir)
         self.video_loaded = True
-        wait_deadline = time() + 5.0
-        while self.active_reel.get("preview_loaded") is False and time() < wait_deadline:
+        while self.active_reel.get("preview_loaded") is False:
             QtWidgets.QApplication.processEvents()
             sleep(0.05)
-        if self.active_reel.get("preview_loaded") is False:
-            print(f"[set_new_video] preview wait timeout for reel {self.active_reel.get('id')}, continuing without blocking UI")
 
     def next_split(self):
         if self.fresh_load or self.active_reel["splits"] == 0 or self.video_loaded is False:
@@ -416,10 +445,14 @@ class MainWindow(QtWidgets.QMainWindow):
         with self.queue_lock:
             reel = [d for d in self.queue_batches if d["id"] == reel_id][0]
             reel["state"] = "TO_RENDER"
+            reel["preview_loaded"] = False
             if "preview_data" in reel:
                 del reel["preview_data"]
+            previews_loaded = len([d for d in self.queue_batches if d.get("preview_loaded") is True and d.get("state") != "TO_RENDER"])
+        self.signal_previews_loaded.emit(previews_loaded)
         with self.render_lock:
             self.render_batches.append(self.active_reel)
+        self.refresh_reels_in_render_count()
         self.render_window.update_render_table()
         self.reset_states()
         if self.check_auto_next.checkState() == 2:
@@ -652,6 +685,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def gui_update_previews_loaded(self, previews_loaded):
         self.line_previews_loaded.setText(str(previews_loaded))
+
+    def gui_update_reels_in_render(self, reels_in_render):
+        if hasattr(self, "line_reels_in_render"):
+            self.line_reels_in_render.setText(str(reels_in_render))
+
+    def refresh_reels_in_render_count(self):
+        with self.render_lock:
+            reels_in_render = len(self.render_batches)
+        self.signal_reels_in_render.emit(reels_in_render)
 
     def load_qc_table(self):
         self.cb_1.setChecked(False)

@@ -58,6 +58,7 @@ class RenderWindow(QtWidgets.QMainWindow):
             self.table_render.setItem(row, 2, QTableWidgetItem(str(render_batch["id"])))
             self.table_render.setItem(row, 3, QTableWidgetItem(str(render_batch["state"])))
             self.table_render.setItem(row, 4, QTableWidgetItem(str(render_batch["video_out_dir"])))
+        self.mainwindow.refresh_reels_in_render_count()
 
     def save_render_as_pickle(self, at_render):
         batches_left = []
