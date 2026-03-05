@@ -100,7 +100,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.start_interval = 8
         self.accepted_video_formats = [".mp4", ".mov", ".avi"]
 
-        self.vlc_instance = vlc.Instance()
+        # Keep libVLC stderr noise out of app stdout (plugin cache and audio backend warnings).
+        self.vlc_instance = vlc.Instance("--quiet", "--verbose=-1")
         self.mediaplayer = self.vlc_instance.media_player_new()
         self.mediaplayer.set_hwnd(int(self.video_frame.winId()))
         self.video_slider.setToolTip("Position")
@@ -159,7 +160,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_window = SettingsWindow(self)
         self.split_match_status_label = QLabel("Split Match: N/A")
         self.statusBar().addPermanentWidget(self.split_match_status_label)
-        self.pop_up_message("Is ConvertX2DVDClosed?", "ConvertX2DVD")
         self.signal_start_preprocess_manager.emit()
         self.refresh_reels_in_render_count()
 
@@ -293,11 +293,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         else:
             with self.queue_lock:
-                non_loading_reels = [d for d in self.queue_batches if d["state"] == "RECORDED"]
-            if len(non_loading_reels) == 0:
+                ready_reels = [
+                    d for d in self.queue_batches
+                    if d["state"] == "RECORDED" and d.get("prep_state", "READY") == "READY"
+                ]
+                waiting_prep = [
+                    d for d in self.queue_batches
+                    if d["state"] == "RECORDED" and d.get("prep_state", "READY") != "READY"
+                ]
+            if len(ready_reels) == 0:
+                if len(waiting_prep) > 0:
+                    self.pop_up_message("No reels are ready yet. Waiting for preprocess to finish.", "Preprocessing")
+                    return
                 self.pop_up_message("No more reels to edit.", "Out of reels")
                 return
-            self.active_reel = non_loading_reels[-1]
+            self.active_reel = ready_reels[-1]
             self.active_reel["state"] = "EDITING"
             self.previews_loading = True
             self.fetch_previews_thread(self.active_reel["id"], True)

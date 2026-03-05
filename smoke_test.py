@@ -31,7 +31,7 @@ def queue_fetch_smoke(live_api: bool):
         from api import MakeRequest
 
         req = MakeRequest()
-        data, response = req.make_get("/cine/cine-tug/get-to-edit-all")
+        data, response = req.make_get("/cine/cine-tug/get-to-edit-all-ai")
         if not data or not isinstance(data, dict):
             return False, f"Live queue fetch failed with status: {getattr(response, 'status_code', 'unknown')}"
         return True, f"Live queue fetch OK. orders={len(data.get('orders', []))}"
